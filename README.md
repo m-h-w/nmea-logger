@@ -9,16 +9,22 @@ The pi code in this repo builds on (and is dependent upon) work done by Kees Ver
 
 The pi end of the logger is started at boot time by a shell script nmea-start.sh - this assumes that you have installed the can utils as described by the skpang.co.uk manual at the url above.
 
+The tools/ directory contains command line tools for analysing the data output from the nmea-logger and writing to the Mongo Atlas time series DB
+
 
 ToDo
 -----
-- Server Side 
+- Server Side. more detail here: https://docs.google.com/document/d/1RJxxjj2bqD2BeqQbOhAEDa46bFF_WlRZTJlIrkAEbcc/edit?usp=sharing
 
-1. Infrastructure and code to capture the data in AWS (probably in Dynamo and / or S3 )
-2. Access control - using gmail oauth2
-2. Feature extraction tools to find tacks and gybes
-3. Calibration tools for calibrating boatspeed on both tacks and at different heel angles.
+1. add the test tools to write to Mongo DB
+2. write a secure API for the web client
+3. extend tool to extract all of the data fields in the nmea logger output.
 
+Web Client
+----------
+
+1. write a react web app to read data from a local file and display as a grahp on a web page using D3
+2. build login capability and read data from the API
 
 - Pi side 
 ----------
