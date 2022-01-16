@@ -12,22 +12,24 @@ The pi end of the logger is started at boot time by a shell script nmea-start.sh
 The tools/ directory contains command line tools for analysing the data output from the nmea-logger and writing to the Mongo Atlas time series DB
 
 
-ToDo
+ToDo 
 -----
-- Server Side. more detail here: https://docs.google.com/document/d/1RJxxjj2bqD2BeqQbOhAEDa46bFF_WlRZTJlIrkAEbcc/edit?usp=sharing
+More detail here: https://docs.google.com/document/d/1RJxxjj2bqD2BeqQbOhAEDa46bFF_WlRZTJlIrkAEbcc/edit?usp=sharing
 
+- Server Side
+------------- 
 1. add the test tools to write to Mongo DB
 2. write a secure API for the web client
 3. extend tool to extract all of the data fields in the nmea logger output.
 
+
 Web Client
 ----------
-
 1. write a react web app to read data from a local file and display as a grahp on a web page using D3
 2. build login capability and read data from the API
 
-- Pi side 
-----------
+- Pi Side
+---------
 1. Adding the 4G modem
 2. web server to host config and other local tools.
 
