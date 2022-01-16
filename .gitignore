@@ -1,0 +1,5 @@
+# Ignore files related to API keys
+.env
+
+# Ignore golang executables
+./tools/mongo-tools
