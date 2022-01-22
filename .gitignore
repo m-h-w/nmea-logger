@@ -3,3 +3,4 @@
 
 # Ignore golang executables
 ./tools/mongo-tools
+./mongo/mongo-access
