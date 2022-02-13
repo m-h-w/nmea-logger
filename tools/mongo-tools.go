@@ -87,7 +87,7 @@ func countDescriptions(filename string) map[string]int {
 				}
 			}
 			// if not, this is description we havent seen so store it
-			if found == false {
+			if !found {
 				m[result["description"].(string)] = 1 // this is the first time a description has found
 			}
 
