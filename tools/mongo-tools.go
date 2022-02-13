@@ -45,7 +45,10 @@ func parseCommandLine() *commandLineSettings_t {
 // looks at the json data from the logger and counts the number of unique descriptions. Descriptions are
 // the different sensor types that get logged from the B&G
 
-func countDescriptions(filename string) []string {
+func countDescriptions(filename string) map[string]int {
+
+	var found bool
+	var m = map[string]int{} // map to store the decription (reading type) and the number found
 
 	// Try to open the named file
 	file, err := os.Open(filename)
@@ -59,12 +62,6 @@ func countDescriptions(filename string) []string {
 
 	// Get next line of file
 	scanner := bufio.NewScanner(file)
-
-	//i := 0
-
-	// slice of strings to store unique descriptions in.
-	var description []string
-	var found bool
 
 	for scanner.Scan() {
 
@@ -83,25 +80,18 @@ func countDescriptions(filename string) []string {
 		if result["description"] != nil {
 
 			// have a look through previously stored descriptions to see if we have stored this one yet
-			for _, v := range description {
-				if v == result["description"].(string) {
+			for k, _ := range m {
+				if k == result["description"].(string) {
 					found = true // the description has been seen before and stored
+					m[k]++       // update the count of this description
 				}
 			}
 			// if not, this is description we havent seen so store it
 			if found == false {
-				description = append(description, result["description"].(string))
+				m[result["description"].(string)] = 1 // this is the first time a description has found
 			}
 
 		}
-
-		// Deubug - go round a few times and stop
-		/*
-			i++
-			if i > 20 {
-				fmt.Printf("descriptions found %v\r\n", description)
-				os.Exit(1)
-			}*/
 
 	} // Repeat until EOF or error (scanner keeps scanning until either EOF or error)
 
@@ -110,7 +100,7 @@ func countDescriptions(filename string) []string {
 		os.Exit(1)
 	}
 
-	return description
+	return m
 }
 
 func main() {
@@ -130,8 +120,8 @@ func main() {
 			fmt.Printf("counting descriptions\r\n")
 			descriptions := countDescriptions(settings.file)
 
-			for i, v := range descriptions {
-				fmt.Printf("\r\ndescription[%d] == %v", i, v)
+			for k, v := range descriptions {
+				fmt.Printf("\r\n %s has %v instances", k, v)
 			}
 			os.Exit(1)
 		} else {
