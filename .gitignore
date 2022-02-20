@@ -4,5 +4,6 @@
 # Ignore golang executables
 ./tools/mongo-tools
 ./tools/test.data
-./mongo/mongo-access
+./mongodb/mongo-access
+./transform/mongotransformer
 ./DS_Store
