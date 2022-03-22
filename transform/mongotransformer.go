@@ -21,6 +21,56 @@ var debug bool = true
 
 //-----------------------------------------------------------------------------------------------//
 
+// Wind Data
+
+type windMetadata_t struct {
+	DataSource      string  `json:"source"`
+	Reference       string  `json:"reference"`
+	AngleCorrection float64 `json:"angleCorrection`
+	SpeedCorrectiom float64 `json:"speedCorrection`
+}
+
+type windData_t struct {
+	Ts       time.Time      `json:"ts"`
+	Metadata windMetadata_t `json:"metadata"`
+	Angle    float64        `json:"angle"`
+	Speed    float64        `json:"speed"`
+}
+
+func transformWindData(input map[string]interface{}) {
+
+	var wind windData_t
+
+	// Check reference is Apparent and ignore if not
+	reference := input["Reference"].(map[string]interface{})
+	if reference["name"].(string) != "Apparent" {
+
+		if debug {
+			fmt.Printf("Wind reading recieved with Apparent not set as reference")
+		}
+		return
+	}
+
+	t, err := time.Parse(time.RFC3339, convertToDateFormat(input["timestamp"].(string)))
+	check(err)
+
+	// fill out the data structure
+	wind.Ts = t
+	wind.Metadata.DataSource = "Windex"
+	wind.Metadata.Reference = "Apparent"
+
+	//extract the readings
+	fields := input["fields"].(map[string]interface{})
+	wind.Angle = fields["Wind Angle"].(float64)
+	wind.Speed = fields["Wind Speed"].(float64)
+
+	//write to data store
+	bsonWind, err := bson.Marshal(wind)
+	check(err)
+	mongodb.WriteToMongo(bsonWind)
+
+}
+
 // GPS Speed and Course
 
 type sogMetadata_t struct {
@@ -48,6 +98,15 @@ func transformCogAndSog(input map[string]interface{}) {
 
 	var cog cog_t
 	var sog sog_t
+
+	// check the reference for COG is true (as opposed to magnetic)
+	reference := input["COG Reference"].(map[string]interface{})
+	if reference["name"].(string) != "True" {
+		if debug {
+			fmt.Printf("Cog and Sog reading recieved with True not set as reference")
+		}
+		return
+	}
 
 	// timestamp needs to be converted from an rfc3339 string to the golang time.Time type
 	t, err := time.Parse(time.RFC3339, convertToDateFormat(input["timestamp"].(string)))
@@ -112,6 +171,7 @@ func transformHeading(input map[string]interface{}) {
 	fields := input["fields"].(map[string]interface{})
 	heading.MagHeading = fields["Heading"].(float64)
 
+	// variation field doesnt always exis
 	if val, ok := fields["Variation"]; ok {
 		heading.Metadata.MagVar = val.(float64)
 		heading.Metadata.TrueHeading = heading.MagHeading + heading.Metadata.MagVar
@@ -222,6 +282,9 @@ func TransformToMongoFormat(ipfile string) {
 
 		case "COG & SOG, Rapid Update":
 			transformCogAndSog(result)
+
+		case "Wind Data":
+			transformWindData(result)
 
 		default:
 			continue // skip this row as we dont want it stored in the DB
