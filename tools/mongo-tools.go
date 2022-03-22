@@ -49,6 +49,7 @@ func countDescriptions(filename string) map[string]int {
 
 	var found bool
 	var m = map[string]int{} // map to store the decription (reading type) and the number found
+	m["interations"] = 0
 
 	// Try to open the named file
 	file, err := os.Open(filename)
@@ -92,6 +93,8 @@ func countDescriptions(filename string) map[string]int {
 			}
 
 		}
+
+		m["iterations"]++
 
 	} // Repeat until EOF or error (scanner keeps scanning until either EOF or error)
 

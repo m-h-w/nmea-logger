@@ -9,7 +9,6 @@ import (
 
 	"github.com/m-h-w/nmea-logger/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 var debug bool = true
@@ -17,11 +16,115 @@ var debug bool = true
 // Transform data from the B&G logger into a format that Mongo (or another timeseries DB) can
 // work with and remove all the extraneous feilds from the data captured by the logger.
 
-// The document metadat contains the only fields that can be changed once the document is written
+// The document metadata contains the only fields that can be changed once the document is written
 // more info: https://docs.mongodb.com/manual/core/timeseries/timeseries-limitations/
 
-//Data Structures
+//-----------------------------------------------------------------------------------------------//
 
+// GPS Speed and Course
+
+type sogMetadata_t struct {
+	DataSource string `json:"source"`
+}
+
+type sog_t struct {
+	Ts       time.Time     `json:"ts"`
+	Metadata sogMetadata_t `json:"metadata"`
+	Sog      float64       `json:"sog"`
+}
+
+type cogMetadata_t struct {
+	DataSource string `json:"source"`
+	Ref        string `json:"ref"` //magnetic or true - default seems to be true
+}
+
+type cog_t struct {
+	Ts       time.Time     `json:"ts"`
+	Metadata cogMetadata_t `json:"metadata"`
+	Cog      float64       `json:"cog"`
+}
+
+func transformCogAndSog(input map[string]interface{}) {
+
+	var cog cog_t
+	var sog sog_t
+
+	// timestamp needs to be converted from an rfc3339 string to the golang time.Time type
+	t, err := time.Parse(time.RFC3339, convertToDateFormat(input["timestamp"].(string)))
+	check(err)
+
+	// write timestamps
+	cog.Ts = t
+	sog.Ts = t
+
+	// write constants
+	cog.Metadata.DataSource = "gps"
+	sog.Metadata.DataSource = "gps"
+	cog.Metadata.Ref = "true"
+
+	// extract the gps readings
+	fields := input["fields"].(map[string]interface{})
+
+	// test to see if there is a COG value in the incoming string - there isnt always
+	if val, ok := fields["COG"]; ok {
+		cog.Cog = val.(float64)
+	}
+
+	if val, ok := fields["SOG"]; ok {
+		sog.Sog = val.(float64)
+	}
+
+	// write cog and sog to the data store
+	bsonSog, err := bson.Marshal(sog)
+	check(err)
+	mongodb.WriteToMongo(bsonSog)
+
+	bsonCog, err := bson.Marshal(cog)
+	check(err)
+	mongodb.WriteToMongo(bsonCog)
+
+}
+
+// Compass Heading
+type headingMetadata_t struct {
+	DataSource  string  `json:"source"`
+	MagVar      float64 `json:"magvar"`
+	TrueHeading float64 `json:"trueheading"`
+}
+
+type heading_t struct {
+	Ts         time.Time         `json:"ts"`
+	Metadata   headingMetadata_t `json:"metadata"`
+	MagHeading float64           `json:"magheading"`
+}
+
+func transformHeading(input map[string]interface{}) {
+
+	var heading heading_t
+
+	// timestamp needs to be converted from an rfc3339 string to the golang time.Time type
+	t, err := time.Parse(time.RFC3339, convertToDateFormat(input["timestamp"].(string)))
+	check(err)
+
+	// extract the sensor readings (magnetic heading and magneting variation)
+	heading.Ts = t
+	heading.Metadata.DataSource = "compass"
+	fields := input["fields"].(map[string]interface{})
+	heading.MagHeading = fields["Heading"].(float64)
+
+	if val, ok := fields["Variation"]; ok {
+		heading.Metadata.MagVar = val.(float64)
+		heading.Metadata.TrueHeading = heading.MagHeading + heading.Metadata.MagVar
+	}
+
+	//Marshall the bheading data in bson
+	bsonHeading, err := bson.Marshal(heading)
+	check(err)
+	// write to the data store
+	mongodb.WriteToMongo(bsonHeading)
+}
+
+// Boat Speed
 type boatSpeedMetadata_t struct {
 	DataSource         string  `json:"source"`
 	CorrectedBoatSpeed float64 `json:"correctedBoatSpeed"`
@@ -33,54 +136,11 @@ type boatSpeed_t struct {
 	IndicatedBoatSpeed float64             `json:"indicatedBoatSpeed"` // indicated boatspeed from the log
 }
 
-// takes a []byte of bson values for all the document types and caches DB_WRITE_THRESHOLD documents before writing them to
-// Mongo using insertMany
-
-func writeToCache(writeCount *mongodb.DbWriteCache_t, v []byte, client *mongo.Client) {
-
-	if debug {
-		fmt.Printf("Writing to cache %d \n", writeCount.Count)
-	}
-	if writeCount.Count == 0 {
-		// This is the first time through since the last write to the DB so allocate memory to cache
-		// documents in until the number reaches the DB_WRITE_THRESHOLD
-		// This cache object will be consumed in a go routine so a new object is required per call to
-		// the go routine. Assumption is that garbage collector will free the memory once the go routine
-		// terminates.
-
-		writeCount.Mem = new([mongodb.DB_WRITE_THRESHOLD][]byte)
-		writeCount.Count = 0 //reset the write  counter for the next 100 documents
-
-		// write the first bson doc to cache
-		writeCount.Mem[writeCount.Count] = v
-		writeCount.Count++
-
-	} else if writeCount.Count == (mongodb.DB_WRITE_THRESHOLD - 1) { // 0-99 not 1-100
-
-		if debug {
-			// Write cache to DB
-			fmt.Printf("write cache to DB \n")
-		}
-
-		// write the last json doc to cache; but dont update the count
-		writeCount.Mem[writeCount.Count] = v
-		mongodb.WriteCacheToDB(client, writeCount)
-
-	} else {
-
-		// write bson data to cache
-		writeCount.Mem[writeCount.Count] = v
-		// update the write count for this document. Write to DB when it reaches DB_WRITE_THRESHOLD (100)
-		writeCount.Count++
-	}
-
-}
-
-func transformSpeed(input map[string]interface{}, writeCount *mongodb.DbWriteCache_t, client *mongo.Client) {
+func transformSpeed(input map[string]interface{}) {
 
 	var boatSpeed boatSpeed_t
 
-	// timestamp needs to be converted from and rfc3339 string to the golang time.Time type
+	// timestamp needs to be converted from an rfc3339 string to the golang time.Time type
 	t, err := time.Parse(time.RFC3339, convertToDateFormat(input["timestamp"].(string)))
 	check(err)
 
@@ -93,8 +153,8 @@ func transformSpeed(input map[string]interface{}, writeCount *mongodb.DbWriteCac
 	//Marshall the boatSpeed data in json
 	bsonBoatSpeed, err := bson.Marshal(boatSpeed)
 	check(err)
-
-	writeToCache(writeCount, bsonBoatSpeed, client)
+	// write to the data store
+	mongodb.WriteToMongo(bsonBoatSpeed)
 }
 
 func check(e error) {
@@ -107,7 +167,6 @@ func convertToDateFormat(date string) string {
 
 	// date string is in this format: 	2021-07-09-13:40:59.530"
 	// and needs to be in this format:	2021-07-09T13:40:59.530Z"
-
 	date += "Z"
 	byteArray := []byte(date)
 	byteArray[10] = 0x54 // ascii for 'T' at the 10th (starting from 0) position in the array
@@ -115,7 +174,8 @@ func convertToDateFormat(date string) string {
 }
 
 func TransformToMongoFormat(ipfile string) {
-	var writeCount mongodb.DbWriteCache_t // this structure manages the cache
+
+	var i int // debug iteration counter
 
 	// Try to open the named input file
 	ifile, err := os.Open(ipfile)
@@ -125,20 +185,25 @@ func TransformToMongoFormat(ipfile string) {
 	defer ifile.Close()
 
 	// open the DB Connection
-	mongoClient := mongodb.InitMongoConnection()
+	mongodb.InitMongoConnection()
 	// close connection on exit
-	defer mongodb.CloseMongoConnection(mongoClient)
+	defer mongodb.CloseMongoConnection()
 
 	//  Scan the input file.
 	scanner := bufio.NewScanner(ifile)
 
 	for scanner.Scan() {
+		if debug {
+			fmt.Printf("Interation: %d\n", i)
+			i++
+		}
+
 		//create a map of strings to empty interfaces to unmarshall json B&G logger data into
 		var result map[string]interface{}
 
 		//unmarshall the B&G data. Based on https://www.sohamkamani.com/golang/parsing-json/
 
-		err := json.Unmarshal([]byte(scanner.Text()), &result) //NB result passed by reference
+		err := json.Unmarshal([]byte(scanner.Text()), &result) //NB result passed by refence
 
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error unmarshalling logger data", err)
@@ -147,11 +212,16 @@ func TransformToMongoFormat(ipfile string) {
 
 		// all the functions called from this switch statement are concurrent goroutines.
 		// NB result is passed by value, not by reference, and so will be thread safe.
-
 		switch result["description"] {
 
 		case "Speed":
-			go transformSpeed(result, &writeCount, mongoClient)
+			transformSpeed(result)
+
+		case "Vessel Heading":
+			transformHeading(result)
+
+		case "COG & SOG, Rapid Update":
+			transformCogAndSog(result)
 
 		default:
 			continue // skip this row as we dont want it stored in the DB
