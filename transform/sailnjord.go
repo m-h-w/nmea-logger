@@ -6,10 +6,56 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
-
-	"github.com/atedja/go-vector"
 )
+
+func calculateTrueWind(bsVector []float64, awVector []float64) []float64 {
+
+	// convert to radians
+	// Boat Heading is always 0
+	awaRads := (awVector[1] / 360) * 2 * math.Pi
+
+	// magnitude
+	twMagSqr := math.Pow((math.Cos(awaRads)*awVector[0]), 2) + math.Pow((math.Sin(awaRads)*awVector[0]-bsVector[0]), 2)
+	twMag := math.Sqrt(twMagSqr)
+
+	// direction
+	tanTwDir := (math.Cos(awaRads)*awVector[0]/(math.Sin(awaRads)*awVector[0]) - bsVector[0])
+	twDirRad := math.Atan(tanTwDir)
+
+	twDir := (twDirRad * 180 / math.Pi)
+
+	return []float64{twMag, math.Abs(twDir)}
+}
+
+func calculateTrueWindData(dataStore map[string]interface{}) {
+
+	if debug {
+		fmt.Printf("Calculating True Wind ")
+	}
+
+	if _, ok := dataStore["SOG"]; ok { // depending on how the readings arrive we might not have SOG & COG in the first few reqadings
+
+		boatVector := []float64{dataStore["BoatSpeed"].(float64), 0} // boat heading is always 0 because apparent wind is relative to heading (AWA6)
+		windVector := []float64{dataStore["AWS"].(float64), dataStore["AWA"].(float64)}
+
+		trueWindVector := calculateTrueWind(boatVector, windVector)
+
+		if debug {
+			fmt.Printf("TWS: %f TWA %f\n", trueWindVector[0], trueWindVector[1])
+		}
+
+		dataStore["TWS"] = trueWindVector[0]
+		dataStore["TWA"] = trueWindVector[1]
+
+	} else {
+		if debug {
+			fmt.Printf("no values yet\n")
+		}
+	}
+
+}
 
 func storeTimestamp(loggerData map[string]interface{}, dataStore map[string]interface{}) {
 
@@ -79,29 +125,6 @@ func storeHeading(loggerData map[string]interface{}, dataStore map[string]interf
 
 }
 
-func calculateTrueWindData(dataStore map[string]interface{}) {
-
-	if debug {
-		fmt.Printf("Calculating True Wind ")
-	}
-
-	if _, ok := dataStore["SOG"]; ok { // depending on how the readings arrive we might not have SOG & COG in the first few reqadings
-
-		boatVector := vector.NewWithValues([]float64{dataStore["SOG"].(float64), dataStore["COG"].(float64)})
-		windVector := vector.NewWithValues([]float64{dataStore["AWS"].(float64), dataStore["AWA"].(float64)})
-		trueWindVector := vector.Subtract(windVector, boatVector)
-
-		if debug {
-			fmt.Printf("TWS: %f TWA %f\n", trueWindVector[0], trueWindVector[1])
-		}
-	} else {
-		if debug {
-			fmt.Printf("no SOG & COG values yet\n")
-		}
-	}
-
-}
-
 func storeWindData(loggerData map[string]interface{}, dataStore map[string]interface{}) {
 
 	if debug {
@@ -127,11 +150,21 @@ func storeCOGandSOG(loggerData map[string]interface{}, dataStore map[string]inte
 	}
 
 	fields := loggerData["fields"].(map[string]interface{})
-	dataStore["COG"] = fields["COG"].(float64)
-	dataStore["SOG"] = fields["SOG"].(float64)
 
-	if debug {
-		fmt.Printf("COG:%f SOG:%f\n", dataStore["COG"], dataStore["SOG"])
+	if _, ok := fields["COG"].(float64); ok { // some times there is no data in the incoming json for some reason.
+		dataStore["COG"] = fields["COG"].(float64)
+		dataStore["SOG"] = fields["SOG"].(float64)
+
+		if debug {
+			fmt.Printf("COG:%f SOG:%f\n", dataStore["COG"], dataStore["SOG"])
+		}
+
+	} else {
+
+		if debug {
+
+			fmt.Printf("no COG in incoming jason.\n %v", loggerData)
+		}
 	}
 
 }
@@ -194,7 +227,7 @@ func storingDataPoints(loggerData map[string]interface{}, dataStore map[string]i
 		}
 		storeHeading(loggerData, dataStore)
 
-	case "Wind Data":
+	case "Wind Data": // calculates True wind data
 		storeWindData(loggerData, dataStore)
 		if debug {
 			fmt.Printf("%s\n", loggerData)
@@ -214,7 +247,7 @@ func storingDataPoints(loggerData map[string]interface{}, dataStore map[string]i
 // The current columns are:
 // 		ISODateTimeUTC,Lat,Lon, BoatSpeed, Heading
 
-var columns = [...]string{"ISODateTimeUTC", "Lat", "Lon", "BoatSpeed", "Heading"}
+var columns = [...]string{"ISODateTimeUTC", "Lat", "Lon", "BoatSpeed", "Heading", "AWA", "AWS", "TWS", "TWA"}
 
 // Put output in CSV format as per https://www.sailnjord.com/data-sources/csv/
 func formattingSnOutput(dataStore map[string]interface{}, datawriter *bufio.Writer) State {
@@ -270,6 +303,34 @@ func formattingSnOutput(dataStore map[string]interface{}, datawriter *bufio.Writ
 			if dataStore["Heading"] != nil {
 				row += ","
 				row += fmt.Sprintf("%f", dataStore["Heading"].(float64))
+			} else {
+				row += ","
+			}
+		case "AWA":
+			if dataStore["AWA"] != nil {
+				row += ","
+				row += fmt.Sprintf("%f", dataStore["AWA"].(float64))
+			} else {
+				row += ","
+			}
+		case "AWS":
+			if dataStore["AWS"] != nil {
+				row += ","
+				row += fmt.Sprintf("%f", dataStore["AWS"].(float64))
+			} else {
+				row += ","
+			}
+		case "TWS":
+			if dataStore["TWS"] != nil {
+				row += ","
+				row += fmt.Sprintf("%f", dataStore["TWS"].(float64))
+			} else {
+				row += ","
+			}
+		case "TWA":
+			if dataStore["TWA"] != nil {
+				row += ","
+				row += fmt.Sprintf("%f", dataStore["TWA"].(float64))
 			} else {
 				row += ","
 			}
