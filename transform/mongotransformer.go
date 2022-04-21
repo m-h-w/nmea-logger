@@ -21,35 +21,99 @@ var debug bool = true
 
 //-----------------------------------------------------------------------------------------------//
 
+// Position Data
+
+type positionMetadata_t struct {
+	DataSource string `json:"source"`
+}
+
+type positionData_t struct {
+	Ts       time.Time          `json:"ts"`
+	Metadata positionMetadata_t `json:"metadata"`
+	Lat      float64            `json:"lat"`
+	Long     float64            `json:"long"`
+}
+
+func transformPositionData(input map[string]interface{}) {
+
+	var position positionData_t
+
+	// convert time stamp
+	t, err := time.Parse(time.RFC3339, convertToDateFormat(input["timestamp"].(string)))
+	check(err)
+	position.Ts = t
+
+	// There maybe a data source from the Sailmon GPS at some later stage
+	position.Metadata.DataSource = "B&G GPS"
+
+	//extract the readings
+	fields := input["fields"].(map[string]interface{})
+	position.Lat = fields["Latitude"].(float64)
+	position.Long = fields["Longitude"].(float64)
+
+	//write to data store
+	bsonPosition, err := bson.Marshal(position)
+	check(err)
+	mongodb.WriteToMongo(bsonPosition)
+
+}
+
+// Attitude Data
+
+type attitudeMetadata_t struct {
+	DataSource string `json:"source"`
+}
+
+type attitudeData_t struct {
+	Ts       time.Time          `json:"ts"`
+	Metadata attitudeMetadata_t `json:"metadata"`
+	Pitch    float64            `json:"pitch"`
+	Roll     float64            `json:"roll"`
+}
+
+func transformAttitudeData(input map[string]interface{}) {
+
+	var attitude attitudeData_t
+
+	// convert time stamp
+	t, err := time.Parse(time.RFC3339, convertToDateFormat(input["timestamp"].(string)))
+	check(err)
+	attitude.Ts = t
+
+	// set the meta data field - there may be an attitude source from the Sailmon later.
+	attitude.Metadata.DataSource = "B&G Heel Sensor"
+
+	//extract the readings
+	fields := input["fields"].(map[string]interface{})
+	attitude.Pitch = fields["Pitch"].(float64)
+	attitude.Roll = fields["Roll"].(float64)
+
+	//write to data store
+	bsonAttitude, err := bson.Marshal(attitude)
+	check(err)
+	mongodb.WriteToMongo(bsonAttitude)
+
+}
+
 // Wind Data
 
 type windMetadata_t struct {
 	DataSource      string  `json:"source"`
 	Reference       string  `json:"reference"`
-	AngleCorrection float64 `json:"angleCorrection`
-	SpeedCorrectiom float64 `json:"speedCorrection`
+	AngleCorrection float64 `json:"angleCorrection"`
+	SpeedCorrectiom float64 `json:"speedCorrection"`
 }
 
 type windData_t struct {
 	Ts       time.Time      `json:"ts"`
 	Metadata windMetadata_t `json:"metadata"`
-	Angle    float64        `json:"angle"`
-	Speed    float64        `json:"speed"`
+	Angle    float64        `json:"windangle"`
+	Speed    float64        `json:"windspeed"`
 }
 
 func transformWindData(input map[string]interface{}) {
 
 	var wind windData_t
-
-	// Check reference is Apparent and ignore if not
-	reference := input["Reference"].(map[string]interface{})
-	if reference["name"].(string) != "Apparent" {
-
-		if debug {
-			fmt.Printf("Wind reading recieved with Apparent not set as reference")
-		}
-		return
-	}
 
 	t, err := time.Parse(time.RFC3339, convertToDateFormat(input["timestamp"].(string)))
 	check(err)
@@ -61,6 +125,17 @@ func transformWindData(input map[string]interface{}) {
 
 	//extract the readings
 	fields := input["fields"].(map[string]interface{})
+
+	// Check reference is Apparent and ignore if not
+	reference := fields["Reference"].(map[string]interface{})
+	if reference["name"].(string) != "Apparent" {
+
+		if debug {
+			fmt.Printf("Wind reading recieved with Apparent not set as reference")
+		}
+		return
+	}
+
 	wind.Angle = fields["Wind Angle"].(float64)
 	wind.Speed = fields["Wind Speed"].(float64)
 
@@ -99,15 +174,6 @@ func transformCogAndSog(input map[string]interface{}) {
 	var cog cog_t
 	var sog sog_t
 
-	// check the reference for COG is true (as opposed to magnetic)
-	reference := input["COG Reference"].(map[string]interface{})
-	if reference["name"].(string) != "True" {
-		if debug {
-			fmt.Printf("Cog and Sog reading recieved with True not set as reference")
-		}
-		return
-	}
-
 	// timestamp needs to be converted from an rfc3339 string to the golang time.Time type
 	t, err := time.Parse(time.RFC3339, convertToDateFormat(input["timestamp"].(string)))
 	check(err)
@@ -123,6 +189,15 @@ func transformCogAndSog(input map[string]interface{}) {
 
 	// extract the gps readings
 	fields := input["fields"].(map[string]interface{})
+
+	// check the reference for COG is true (as opposed to magnetic)
+	reference := fields["COG Reference"].(map[string]interface{})
+	if reference["name"].(string) != "True" {
+		if debug {
+			fmt.Printf("Cog and Sog reading recieved with True not set as reference")
+		}
+		return
+	}
 
 	// test to see if there is a COG value in the incoming string - there isnt always
 	if val, ok := fields["COG"]; ok {
@@ -272,6 +347,10 @@ func TransformToMongoFormat(ipfile string) {
 
 		// all the functions called from this switch statement are concurrent goroutines.
 		// NB result is passed by value, not by reference, and so will be thread safe.
+		if debug {
+			fmt.Printf("document: %s\r\n", result["description"])
+		}
+
 		switch result["description"] {
 
 		case "Speed":
@@ -285,6 +364,12 @@ func TransformToMongoFormat(ipfile string) {
 
 		case "Wind Data":
 			transformWindData(result)
+
+		case "Position, Rapid Update":
+			transformPositionData(result)
+
+		case "Attitude":
+			transformAttitudeData(result)
 
 		default:
 			continue // skip this row as we dont want it stored in the DB
