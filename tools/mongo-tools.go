@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/m-h-w/nmea-logger/mongodb"
 	"github.com/m-h-w/nmea-logger/transform"
 )
 
@@ -16,21 +17,25 @@ import (
 
 // structure containing any settings entered from the command line
 type commandLineSettings_t struct {
-	help       bool   // prints out usage info
-	transform  bool   // transforms the data from the b&g logger to a more db friendly format
-	dispFields bool   // display the different data fields in the logger data
-	file       string // take input from a file: -file <filename>
-	sailNjord  bool   // convert B&G output file to Sailnjord format for core readings
+	help        bool   // prints out usage info
+	transform   bool   // transforms the data from the b&g logger to a more db friendly format
+	dispFields  bool   // display the different data fields in the logger data
+	file        string // take input from a file: -file <filename>
+	sailNjord   bool   // convert B&G output file to Sailnjord format for core readings
+	collection  string // specify the collection to write to
+	lowResTable bool   // generate a low resolution table to help the UI scale.
 }
 
 func parseCommandLine() *commandLineSettings_t {
 
 	// List the command line options
-	helpPtr := flag.Bool("h", false, "prints out usage info")
-	transformPtr := flag.Bool("t", false, "transform the input file to a db friendly format")
+	helpPtr := flag.Bool("h", false, "Prints out usage info")
+	transformPtr := flag.Bool("t", false, "Transform the input file to a db friendly format")
 	dispFieldPtr := flag.Bool("f", false, "Display the different data fields contained in the input file")
-	fileNamePtr := flag.String("file", "", "take input from a file -file <filename> ")
-	sailNjordPtr := flag.Bool("sn", false, "transform fileinput to Sail Njord format")
+	fileNamePtr := flag.String("file", "", "Take input from a file -file <filename> ")
+	sailNjordPtr := flag.Bool("sn", false, "Transform fileinput to Sail Njord format")
+	colPtr := flag.String("col", "", "Collection (Table) to write to in the DB")
+	lowResPtr := flag.Bool("l", false, "generates a low resolution table, with default resolution 6 seconds")
 
 	flag.Parse()
 
@@ -41,6 +46,8 @@ func parseCommandLine() *commandLineSettings_t {
 	settings.file = *fileNamePtr
 	settings.dispFields = *dispFieldPtr
 	settings.sailNjord = *sailNjordPtr
+	settings.collection = *colPtr
+	settings.lowResTable = *lowResPtr
 
 	return settings
 }
@@ -159,10 +166,7 @@ func main() {
 	if settings.help {
 		flag.PrintDefaults()
 		os.Exit(1)
-	}
-
-	// Display the data fileds contained in the input file
-	if settings.dispFields {
+	} else if settings.dispFields { // Display the data fileds contained in the input file
 
 		if settings.file != "" {
 			fmt.Printf("counting descriptions\r\n")
@@ -177,27 +181,47 @@ func main() {
 			fmt.Printf(" -f must be used in conjunction with -file <filename>\r\n")
 			os.Exit(1)
 		}
-	}
+	} else if settings.transform { // Transform Data to MongoDB format
 
-	// Transform Data to MongoDB format
-	if settings.transform {
-		if settings.file != "" {
+		if settings.file != "" && settings.collection != "" {
 
-			fmt.Printf("transforming file to MongDB format\r\n")
-			transform.TransformToMongoFormat(settings.file) // uses the function in the transform module
+			//Check if collection already exists and stop if it does. for now it would need to be
+			//deleted manually using the Atlas UI.
+
+			colls := mongodb.ListCollections()
+
+			for _, col := range colls {
+				if col == settings.collection {
+					fmt.Printf("Collection %s exists already \r\n", settings.collection)
+					os.Exit(1)
+				}
+			}
+
+			fmt.Printf("transforming file to MongDB format\r\nWriting to Collection:%s\r\n", settings.collection)
+			transform.TransformToMongoFormat(settings.file, settings.collection) // uses the function in the transform module
 			os.Exit(1)
 
 		} else {
 
-			fmt.Printf(" -t must be used in conjunction with -file <filename>\r\n")
+			fmt.Printf(" -t must be used in conjunction with -file <filename> and -col for a collection\r\n")
 			os.Exit(1)
 
 		}
-	}
+	} else if settings.lowResTable {
 
-	// Create a Sail Njord compatible file
+		/* build a low resolution data table default = 6 second position data. The thinking here is to drive the UI from a
+		map view so that points of interest can be identified spatially and the times at which the happend then used to
+		pull back higher resolution data from the main collection.
+		*/
 
-	if settings.sailNjord {
+		if settings.collection != "" {
+			transform.GenerateLowResView(6, settings.collection)
+		} else {
+			fmt.Printf("-l must be used in conjuction with -col <collection name>")
+		}
+
+	} else if settings.sailNjord { // Create a Sail Njord compatible file
+
 		if settings.file != "" {
 
 			fmt.Printf("transforming file to Sail Njord format\r\n")
@@ -210,5 +234,9 @@ func main() {
 			os.Exit(1)
 
 		}
+
+	} else { // print the usage if no command line flags provided
+		flag.PrintDefaults()
+		os.Exit(1)
 	}
 }

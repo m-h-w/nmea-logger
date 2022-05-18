@@ -23,20 +23,21 @@ var debug bool = true
 
 // Position Data
 
-type positionMetadata_t struct {
-	DataSource string `json:"source"`
+type PositionMetadata_t struct {
+	DataSource string `bson:"source"`
 }
 
-type positionData_t struct {
-	Ts       time.Time          `json:"ts"`
-	Metadata positionMetadata_t `json:"metadata"`
-	Lat      float64            `json:"lat"`
-	Long     float64            `json:"long"`
+type PositionData_t struct {
+	Id       string             `bson:"_id,omitempty"`
+	Ts       time.Time          `bson:"ts"`
+	Metadata PositionMetadata_t `bson:"metadata"`
+	Lat      float64            `bson:"lat"`
+	Long     float64            `bson:"long"`
 }
 
-func transformPositionData(input map[string]interface{}) {
+func transformPositionData(input map[string]interface{}, collection string) {
 
-	var position positionData_t
+	var position PositionData_t
 
 	// convert time stamp
 	t, err := time.Parse(time.RFC3339, convertToDateFormat(input["timestamp"].(string)))
@@ -54,7 +55,7 @@ func transformPositionData(input map[string]interface{}) {
 	//write to data store
 	bsonPosition, err := bson.Marshal(position)
 	check(err)
-	mongodb.WriteToMongo(bsonPosition)
+	mongodb.WriteToMongo(bsonPosition, collection)
 
 }
 
@@ -71,7 +72,7 @@ type attitudeData_t struct {
 	Roll     float64            `json:"roll"`
 }
 
-func transformAttitudeData(input map[string]interface{}) {
+func transformAttitudeData(input map[string]interface{}, collection string) {
 
 	var attitude attitudeData_t
 
@@ -91,7 +92,7 @@ func transformAttitudeData(input map[string]interface{}) {
 	//write to data store
 	bsonAttitude, err := bson.Marshal(attitude)
 	check(err)
-	mongodb.WriteToMongo(bsonAttitude)
+	mongodb.WriteToMongo(bsonAttitude, collection)
 
 }
 
@@ -111,7 +112,7 @@ type windData_t struct {
 	Speed    float64        `json:"windspeed"`
 }
 
-func transformWindData(input map[string]interface{}) {
+func transformWindData(input map[string]interface{}, collection string) {
 
 	var wind windData_t
 
@@ -142,7 +143,7 @@ func transformWindData(input map[string]interface{}) {
 	//write to data store
 	bsonWind, err := bson.Marshal(wind)
 	check(err)
-	mongodb.WriteToMongo(bsonWind)
+	mongodb.WriteToMongo(bsonWind, collection)
 
 }
 
@@ -169,7 +170,7 @@ type cog_t struct {
 	Cog      float64       `json:"cog"`
 }
 
-func transformCogAndSog(input map[string]interface{}) {
+func transformCogAndSog(input map[string]interface{}, collection string) {
 
 	var cog cog_t
 	var sog sog_t
@@ -211,11 +212,11 @@ func transformCogAndSog(input map[string]interface{}) {
 	// write cog and sog to the data store
 	bsonSog, err := bson.Marshal(sog)
 	check(err)
-	mongodb.WriteToMongo(bsonSog)
+	mongodb.WriteToMongo(bsonSog, collection)
 
 	bsonCog, err := bson.Marshal(cog)
 	check(err)
-	mongodb.WriteToMongo(bsonCog)
+	mongodb.WriteToMongo(bsonCog, collection)
 
 }
 
@@ -232,7 +233,7 @@ type heading_t struct {
 	MagHeading float64           `json:"magheading"`
 }
 
-func transformHeading(input map[string]interface{}) {
+func transformHeading(input map[string]interface{}, collection string) {
 
 	var heading heading_t
 
@@ -256,22 +257,22 @@ func transformHeading(input map[string]interface{}) {
 	bsonHeading, err := bson.Marshal(heading)
 	check(err)
 	// write to the data store
-	mongodb.WriteToMongo(bsonHeading)
+	mongodb.WriteToMongo(bsonHeading, collection)
 }
 
 // Boat Speed
 type boatSpeedMetadata_t struct {
 	DataSource         string  `json:"source"`
-	CorrectedBoatSpeed float64 `json:"correctedBoatSpeed"`
+	CorrectedBoatSpeed float64 `json:"correctedboatspeed"`
 }
 
 type boatSpeed_t struct {
-	Ts                 time.Time           `json:"ts"`                 // timestamp
-	Metadata           boatSpeedMetadata_t `json:"metadata"`           // Information about the reading and any corrections
-	IndicatedBoatSpeed float64             `json:"indicatedBoatSpeed"` // indicated boatspeed from the log
+	Ts                 time.Time           `json:"ts"`        // timestamp
+	Metadata           boatSpeedMetadata_t `json:"metadata"`  // Information about the reading and any corrections
+	IndicatedBoatSpeed float64             `json:"boatspeed"` // indicated boatspeed from the log
 }
 
-func transformSpeed(input map[string]interface{}) {
+func transformSpeed(input map[string]interface{}, collection string) {
 
 	var boatSpeed boatSpeed_t
 
@@ -289,7 +290,7 @@ func transformSpeed(input map[string]interface{}) {
 	bsonBoatSpeed, err := bson.Marshal(boatSpeed)
 	check(err)
 	// write to the data store
-	mongodb.WriteToMongo(bsonBoatSpeed)
+	mongodb.WriteToMongo(bsonBoatSpeed, collection)
 }
 
 func check(e error) {
@@ -308,7 +309,7 @@ func convertToDateFormat(date string) string {
 	return string(byteArray)
 }
 
-func TransformToMongoFormat(ipfile string) {
+func TransformToMongoFormat(ipfile string, collection string) {
 
 	var i int // debug iteration counter
 
@@ -322,7 +323,7 @@ func TransformToMongoFormat(ipfile string) {
 	// open the DB Connection
 	mongodb.InitMongoConnection()
 	// close connection on exit
-	defer mongodb.CloseMongoConnection()
+	defer mongodb.CloseMongoConnection(collection)
 
 	//  Scan the input file.
 	scanner := bufio.NewScanner(ifile)
@@ -337,7 +338,6 @@ func TransformToMongoFormat(ipfile string) {
 		var result map[string]interface{}
 
 		//unmarshall the B&G data. Based on https://www.sohamkamani.com/golang/parsing-json/
-
 		err := json.Unmarshal([]byte(scanner.Text()), &result) //NB result passed by refence
 
 		if err != nil {
@@ -354,22 +354,22 @@ func TransformToMongoFormat(ipfile string) {
 		switch result["description"] {
 
 		case "Speed":
-			transformSpeed(result)
+			transformSpeed(result, collection)
 
 		case "Vessel Heading":
-			transformHeading(result)
+			transformHeading(result, collection)
 
 		case "COG & SOG, Rapid Update":
-			transformCogAndSog(result)
+			transformCogAndSog(result, collection)
 
 		case "Wind Data":
-			transformWindData(result)
+			transformWindData(result, collection)
 
 		case "Position, Rapid Update":
-			transformPositionData(result)
+			transformPositionData(result, collection)
 
 		case "Attitude":
-			transformAttitudeData(result)
+			transformAttitudeData(result, collection)
 
 		default:
 			continue // skip this row as we dont want it stored in the DB
