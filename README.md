@@ -3,7 +3,7 @@ nmea 2000 datalogger for B&G instruments.
 
 This repo contains the source code for an nmea data logger that is configured to work with a raspberry pi with an SK Pang PiCAN-M board (https://www.skpang.co.uk/products/pican-m-with-can-bus-micro-c-and-rs422-connector-3a-smps), tools to load data from the logger into a Mongo Atlas database, and a web frontend with associated APIs to analys the data from  the logger.
 
-On the Raspberry Pi looger in the boat 
+On the Raspberry Pi logger in the boat 
 -------------------------------------
 The pi code in this repo builds on (and is dependent upon) work done by Kees Verruijt. The source code for the required dependencies can be found here https://github.com/canboat/canboat. The tools used in this project are: candump2analyzer and analyzer, which intern work on the output of candump
 
@@ -17,7 +17,9 @@ On the write side:
 The tools/ directory contains command line front end to the various transformer ETL tools that operate on the output file from the Raspberry Pi Logger and transform them using files in /transform as follows:
 
 *SailNjord - converst the output to a format that can be uploaded to the SailNjord website (https://www.sailnjord.com/). Not loaded into Mongo.
+
 *Mongotranformer - converts the output to a mongo format and uploads to a MongoAtlas instance
+
 *low-res-view - reads from a mongotransformer table and extracts the position data at 6 second intervals. This is to drive the fromt end map view.
 
 The /mongodb dir contains the mongo drivers for accessing mongo Atlas.
