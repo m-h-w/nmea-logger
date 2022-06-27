@@ -8,3 +8,7 @@
 ./transform/mongotransformer
 ./DS_Store
 ./mongodb/mongo-access
+
+# Ignore boat data files and csv files
+./tools/2022-*
+./tools/*.csv

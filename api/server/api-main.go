@@ -16,8 +16,13 @@ func homePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func boatPosition(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Endpoint Hit: /boat/position")
+	log.Println("Endpoint Hit: /boat/position")
 	api.GetPosition(w, r)
+}
+
+func boatTacks(w http.ResponseWriter, r *http.Request) {
+	log.Println("Endpoint Hit: /boat/tacks")
+	api.GetTackTimes(w, r)
 }
 
 func handleRequests() {
@@ -26,13 +31,14 @@ func handleRequests() {
 
 	Router.HandleFunc("/", homePage)
 	Router.HandleFunc("/boat/position", boatPosition)
+	Router.HandleFunc("/boat/tacks", boatTacks)
 
 	log.Fatal(http.ListenAndServe(":10000", Router))
 }
 
 // The main entry point for the API server
 func main() {
-	fmt.Println("Rest API v0.1 ")
+	log.Println("Rest API v0.1 ")
 
 	apimongo.InitDB()     // connect to the DB
 	handleRequests()      // Deal with the requests
